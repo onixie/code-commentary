@@ -584,20 +584,20 @@
 
 ;;; Octet data
 
-(deftype octet ()
+(deftype octet ()			;定义无符号字节类型，代表Ascii码
   '(unsigned-byte 8))
 
 (defun make-octet-vector (size)
   (make-array size :element-type 'octet
               :initial-element 0))
 
-(defun octet-vector (&rest octets)
+(defun octet-vector (&rest octets)	;创建一个无符号字节的数组
   (make-array (length octets) :element-type 'octet
               :initial-contents octets))
 
 ;;; ASCII characters as integers
 
-(defun acode (char)
+(defun acode (char)			;把acode转换成 整数
   (cond ((eql char :cr)
          13)
         ((eql char :lf)
@@ -612,21 +612,21 @@
 (defvar *whitespace*
   (list (acode #\Space) (acode #\Tab) (acode :cr) (acode :lf)))
 
-(defun whitep (code)
+(defun whitep (code)			;判断是否为空白字符
   (member code *whitespace*))
 
-(defun ascii-vector (string)
+(defun ascii-vector (string)		;将字符串转换成 整数数组
   (let ((vector (make-octet-vector (length string))))
-    (loop for char across string
+    (loop for char across string	;可否用map实现呢？
           for code = (char-code char)
           for i from 0
-          if (< 127 code) do
+          if (< 127 code) do		;｀伟大｀的loop啊！
           (error "Invalid character for ASCII -- ~A" char)
           else
           do (setf (aref vector i) code))
     vector))
 
-(defun ascii-subseq (vector start end)
+(defun ascii-subseq (vector start end)	;将整数数组转换到字符串
   "Return a subseq of octet-specialized VECTOR as a string."
   (let ((string (make-string (- end start))))
     (loop for i from 0
@@ -635,14 +635,14 @@
     string))
 
 (defun ascii-downcase (code)
-  (if (<= 65 code 90)
+  (if (<= 65 code 90)			;lisp <= 的魅力
       (+ code 32)
       code))
 
 (defun ascii-equal (a b)
   (eql (ascii-downcase a) (ascii-downcase b)))
 
-(defmacro acase (value &body cases)
+(defmacro acase (value &body cases)	;对acode进行的case判断，原理： 把acode转换成整数后（如果是整数就不转还了），使用case进行判断
   (flet ((convert-case-keys (keys)
            (mapcar (lambda (key)
                      (etypecase key
@@ -655,8 +655,8 @@
                           ((t) t)))))
                    (if (consp keys) keys (list keys)))))
     `(case ,value
-       ,@(mapcar (lambda (case)
-                   (destructuring-bind (keys &rest body)
+       ,@(mapcar (lambda (case)				 ;这个lambda返回的是 (key-for-case body-form)的对，mapcar之后再去掉括号，构成case的参数
+                   (destructuring-bind (keys &rest body) ;很不错的方法
                        case
                      `(,(if (eql keys t)
                             t
