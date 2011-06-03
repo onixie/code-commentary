@@ -514,7 +514,7 @@
   (format t "~:D bytes in ~$ seconds (~$KB/sec)"                         ;输出统计信息
           (total progress-bar)
           (elapsed-time progress-bar)
-          (/  (units-per-second progress-bar) 1024))                     ;为什么不用kb/sec这个函数呢?
+          (/  (units-per-second progress-bar) 1024))                     ;为什么不用kb/sec这个函数呢？
   (finish-output))
 
 (defmethod elapsed-time (progress-bar)                                   ;总花费的秒数
@@ -597,7 +597,7 @@
 
 ;;; ASCII characters as integers
 
-(defun acode (char)			;把acode转换成 整数
+(defun acode (char)			;把acode转换成整数, acode为 字符, :cr, :lf
   (cond ((eql char :cr)
          13)
         ((eql char :lf)
@@ -626,7 +626,7 @@
           do (setf (aref vector i) code))
     vector))
 
-(defun ascii-subseq (vector start end)	;将整数数组转换到字符串
+(defun ascii-subseq (vector start end)	;将整数数组转换到字符串, end超过vector怎么办？
   "Return a subseq of octet-specialized VECTOR as a string."
   (let ((string (make-string (- end start))))
     (loop for i from 0
@@ -635,14 +635,25 @@
     string))
 
 (defun ascii-downcase (code)
-  (if (<= 65 code 90)			;lisp <= 的魅力
+  (if (<= 65 code 90)			;lisp <= 的魅力！
       (+ code 32)
       code))
 
 (defun ascii-equal (a b)
   (eql (ascii-downcase a) (ascii-downcase b)))
 
-(defmacro acase (value &body cases)	;对acode进行的case判断，原理： 把acode转换成整数后（如果是整数就不转还了），使用case进行判断
+;; A demo of macro expansion of acase
+;; (qlqs-http::acase (qlqs-http::acode #\Space)
+;; 	   (:cr (print "Carriage Return"))
+;; 	   (:lf (print "Line Feed"))
+;; 	   (#\Space (print "Space")))
+;; 
+;; (CASE (QLQS-HTTP::ACODE #\ )
+;;   ((13) (PRINT "Carriage Return"))
+;;   ((10) (PRINT "Line Feed"))
+;;   ((32) (PRINT "Space")))
+
+(defmacro acase (value &body cases)	;value为整数，把cases中的acode key转换成整数后（是整数就不转还），使用case进行判断
   (flet ((convert-case-keys (keys)
            (mapcar (lambda (key)
                      (etypecase key
@@ -670,7 +681,7 @@
   ((pattern
     :initarg :pattern
     :reader pattern)
-   (pos
+   (pos					;匹配过程中标记已匹配成功的字符个数
     :initform 0
     :accessor match-pos)
    (matchedp
@@ -683,30 +694,30 @@
 
 (define-condition match-failure (error) ())
 
-(defun match (matcher input &key (start 0) end error)
+(defun match (matcher input &key (start 0) end error) ;当error为t时，matcher与input必须完全匹配
   (let ((i start)
         (end (or end (length input)))
         (match-end (length (pattern matcher))))
     (with-slots (pattern pos)
         matcher
-      (loop
-       (cond ((= pos match-end)
+      (loop			;时间复杂度O(length of input)！
+       (cond ((= pos match-end)		;若matcher的已匹配字符索引已经到matcher结尾，说明匹配成功
               (let ((match-start (- i pos)))
                 (setf pos 0)
                 (setf (matchedp matcher) t)
                 (return (values match-start (+ match-start match-end)))))
-             ((= i end)
-              (return nil))
-             ((= (aref pattern pos)
+             ((= i end)			;若matcher还没完全匹配完所有的内容的时候，input就结束了，说明匹配失败，返回nil
+              (return nil))		;为什么这里不用error?
+             ((= (aref pattern pos)	;如果内容相同，同时增加matcher与input的字符索引
                  (aref input i))
               (incf i)
               (incf pos))
              (t
               (if error
                   (error 'match-failure)
-                  (if (zerop pos)
+                  (if (zerop pos)	;若pos为0，说明到目前还没有任何内容字符被匹配，那么简单增加input里的字符索引就可以了
                       (incf i)
-                      (setf pos 0)))))))))
+                      (setf pos 0))))))))) ;若pos不为0,说明虽然部分匹配了,但到当前字符不再匹配，所以重置pos，重新匹配整个matcher
 
 (defun ascii-matcher (string)
   (make-instance 'matcher
@@ -716,7 +727,7 @@
   (make-instance 'matcher
                  :pattern (apply 'octet-vector octets)))
 
-(defun acode-matcher (&rest codes)
+(defun acode-matcher (&rest codes)	;是不是参数的名字叫chars比较好？
   (make-instance 'matcher
                  :pattern (make-array (length codes)
                                       :element-type 'octet
@@ -793,24 +804,24 @@
     (setf (start cbuf) 0)
     (setf (end cbuf)
           (read-octets (data cbuf)
-                       (connection cbuf)))
+                       (connection cbuf))) ;读取stream中的内容，如果为空，则stream到达eof，设置cbuf的eofp为t
     (cond ((emptyp cbuf)
            (setf (eofp cbuf) t)
-           (error 'end-of-data))
+           (error 'end-of-data))	;产生的错误在事件调用函数中进行处理
           (t (size cbuf)))))
 
-(defun process-all (fun cbuf)
+(defun process-all (fun cbuf)		;处理整个buffer中的8192字节的所有内容
   (unless (emptyp cbuf)
     (call-processor fun cbuf (start cbuf) (end cbuf))))
 
-(defun multi-cmatch (matchers cbuf)
+(defun multi-cmatch (matchers cbuf)	;找到所有matcher匹配的start与end
   (let (start end)
     (dolist (matcher matchers (values start end))
       (multiple-value-bind (s e)
           (match matcher (data cbuf)
                  :start (start cbuf)
                  :end (end cbuf))
-        (when (and s (or (null start) (< s start)))
+        (when (and s (or (null start) (< s start)));返回匹配到的matcher中，start最小的匹配的start与end
           (setf start s
                 end e))))))
 
@@ -819,30 +830,30 @@
       (multi-cmatch matcher cbuf)
       (match matcher (data cbuf) :start (start cbuf) :end (end cbuf))))
 
-(defun call-until-end (fun cbuf)
-  (handler-case
+(defun call-until-end (fun cbuf)	;处理流中的所有内容
+  (handler-case				;处理end-of-data错误
       (loop
        (process-all fun cbuf)
        (refill cbuf))
     (end-of-data ()
       (return-from call-until-end))))
 
-(defun show-cbuf (context cbuf)
+(defun show-cbuf (context cbuf)		;这是什么东东？
   (format t "cbuf: ~A ~D - ~D~%" context (start cbuf) (end cbuf)))
 
-(defun call-for-n-octets (n fun cbuf)
+(defun call-for-n-octets (n fun cbuf)	;处理从流开始的N个字节的内容
   (let ((remaining n))
     (loop
-     (when (<= remaining (size cbuf))
+     (when (<= remaining (size cbuf))	;对于剩余的部分,如果不是一整个cbuf,则只处理剩余部分
        (let ((end (+ (start cbuf) remaining)))
          (call-processor fun cbuf (start cbuf) end)
          (setf (start cbuf) end)
          (return)))
-     (process-all fun cbuf)
-     (decf remaining (size cbuf))
-     (refill cbuf))))
+       (process-all fun cbuf)		;对于可填满cbuf的整块内容，全部处理
+       (decf remaining (size cbuf))	;从流中减去那些被处理的
+       (refill cbuf))))
 
-(defun call-until-matching (matcher fun cbuf)
+(defun call-until-matching (matcher fun cbuf) ;如果有匹配，则到匹配处停止处理，否则处理整个流中内容
   (loop
    (multiple-value-bind (start end)
        (cmatch matcher cbuf)
@@ -854,7 +865,7 @@
    (refill cbuf)))
 
 (defun ignore-data (data start end)
-  (declare (ignore data start end)))
+  (declare (ignore data start end)))	;很严谨！
 
 (defun skip-until-matching (matcher cbuf)
   (call-until-matching matcher 'ignore-data cbuf))
@@ -876,7 +887,7 @@
 (defun add-octet (octet sink)
   (vector-push-extend octet (storage sink)))
 
-(defun add-octets (octets sink &key (start 0) end)
+(defun add-octets (octets sink &key (start 0) end) ;end不判断大小不会有问题吗？
   (setf end (or end (length octets)))
   (loop for i from start below end
         do (add-octet (aref octets i) sink)))
@@ -887,7 +898,7 @@
         do (add-octet code sink)))
 
 (defun add-strings (sink &rest strings)
-  (mapc (lambda (string) (add-string string sink)) strings))
+  (mapc (lambda (string) (add-string string sink)) strings)) ;返回值是否比较不好呢？
 
 (defun add-newline (sink)
   (add-octet 13 sink)
@@ -899,7 +910,7 @@
 (defvar *proxy-url* nil)
 
 (defun full-proxy-path (host port path)
-  (format nil "~:[http~;https~]://~A~:[:~D~;~*~]~A"
+  (format nil "~:[http~;https~]://~A~:[:~D~;~*~]~A" ;强大的format tilde控制符！~[选择~*跳过
                        (= port 443)
                        host
                        (or (= port 80)
@@ -907,10 +918,10 @@
                        port
                        path))
 
-(defun make-request-buffer (host port path &key (method "GET"))
+(defun make-request-buffer (host port path &key (method "GET")) ;创建一个HTTP请求报文
   (setf method (string method))
   (when *proxy-url*
-    (setf path (full-proxy-path host port path)))
+    (setf path (full-proxy-path host port path))) ;不明白为什么代理的时候，路径为全路径？
   (let ((sink (make-instance 'octet-sink)))
     (flet ((add-line (&rest strings)
              (apply #'add-strings sink strings)
@@ -924,7 +935,7 @@
       (add-newline sink)
       (sink-buffer sink))))
 
-(defun sink-until-matching (matcher cbuf)
+(defun sink-until-matching (matcher cbuf) ;将cbuf中到匹配的内容都放入sink的buffer中
   (let ((sink (make-instance 'octet-sink)))
     (call-until-matching
      matcher
@@ -936,8 +947,8 @@
 
 ;;; HTTP headers
 
-(defclass header ()
-  ((data
+(defclass header ()			;响应头部的内容为名字：值的键值对
+  ((data				;响应数据的字节数组
     :initarg :data
     :accessor data)
    (status
@@ -964,28 +975,28 @@
   (= (mismatch pattern target :start2 pos) (length pattern)))
 
 (defun header-value-indexes (field-name header)
-  (loop with data = (data header)
+  (loop with data = (data header)	;这个loop可以做教学的典型例子！
         with pattern = (ascii-vector (string-downcase field-name))
         for start across (name-starts header)
         for i from 0
-        when (matches-at pattern data start)
+        when (matches-at pattern data start)  ;在头部数据的每个名字开始的地方，开始匹配pattern，如果匹配到了，则返回对应的value的开始和结束的位置
         return (values (aref (value-starts header) i)
                        (aref (value-ends header) i))))
 
-(defun ascii-header-value (field-name header)
+(defun ascii-header-value (field-name header) ;返回名字对应的值的ascii字符串
   (multiple-value-bind (start end)
-      (header-value-indexes field-name header)
+      (header-value-indexes field-name header) ;找到值的开始和结束位置
     (when start
-      (ascii-subseq (data header) start end))))
+      (ascii-subseq (data header) start end)))) ;获取该位置数组，转换为字符串
 
-(defun all-field-names (header)
+(defun all-field-names (header)		;返回所有的名字
   (map 'list
        (lambda (start end)
          (ascii-subseq (data header) start end))
        (name-starts header)
        (name-ends header)))
 
-(defun headers-alist (header)
+(defun headers-alist (header)		;返回名字与值的alist
   (mapcar (lambda (name)
             (cons name (ascii-header-value name header)))
           (all-field-names header)))
@@ -994,7 +1005,7 @@
   (format stream "~&Decoded headers:~%  ~S~%" (headers-alist header)))
 
 (defun content-length (header)
-  (let ((field-value (ascii-header-value "content-length" header)))
+  (let ((field-value (ascii-header-value "content-length" header))) ;取得HTTP头部中，内容长度的值
     (when field-value
       (let ((value (ignore-errors (parse-integer field-value))))
         (or value
@@ -1007,16 +1018,16 @@
 (defun location (header)
   (ascii-header-value "location" header))
 
-(defun status-code (vector)
+(defun status-code (vector)		;HTTP响应报文开头的格式,比如HTTP/1.0 200 OK， 找到空格后的三个数为状态码
   (let* ((space (position (acode #\Space) vector))
-         (c1 (- (aref vector (incf space)) 48))
+         (c1 (- (aref vector (incf space)) 48)) ;从字符表示的1转换为数值表示的1
          (c2 (- (aref vector (incf space)) 48))
          (c3 (- (aref vector (incf space)) 48)))
     (+ (* c1 100)
        (* c2  10)
        (* c3   1))))
 
-(defun force-downcase-field-names (header)
+(defun force-downcase-field-names (header) ;取得的报文头部的那些名字，不管它的大小写
   (loop with data = (data header)
         for start across (name-starts header)
         for end across (name-ends header)
@@ -1033,7 +1044,7 @@
         (1+ nonwhite)
         pos)))
 
-(defun contract-field-value-indexes (header)
+(defun contract-field-value-indexes (header) ;报文头部的值信息，去掉前后的空白
   "Header field values exclude leading and trailing whitespace; adjust
 the indexes in the header accordingly."
   (loop with starts = (value-starts header)
@@ -1046,28 +1057,28 @@ the indexes in the header accordingly."
         (setf (aref starts i) (skip-white-forward start data))
         (setf (aref ends i) (skip-white-backward end data))))
 
-(defun next-line-pos (vector)
+(defun next-line-pos (vector)		;将位置移到下一行，太经典了！这不是状态机么
   (let ((pos 0))
-    (labels ((finish (&optional (i pos))
+    (labels ((finish (&optional (i pos)) 
                (return-from next-line-pos i))
-             (after-cr (code)
+             (after-cr (code)		;若已经遇到CR了，那么不管后面是什么，都表示着应该是换行了。
                (acase code
-                 (:lf (finish pos))
-                 (t (finish (1- pos)))))
-             (pending (code)
+                 (:lf (finish pos))	;标准的情况，pos为:lf最后再incf一下就到下一行了
+                 (t (finish (1- pos))))) ;不正常的情况
+             (pending (code)		;处理一开始处于pending状态，读取字符，若字符不是CRLF，那么继续这个状态，略过非换行的那些字符
                (acase code
-                 (:cr #'after-cr)
-                 (:lf (finish pos))
+                 (:cr #'after-cr)	;若遇到CR进入，“遇到CR了”的这个状态
+                 (:lf (finish pos))	;若直接遇到LF，则表示换行, 不需要CR的换行，这不是正常的情况吧。
                  (t #'pending))))
       (let ((state #'pending))
         (loop
-         (setf state (funcall state (aref vector pos)))
+	   (setf state (funcall state (aref vector pos))) ;状态迁移
          (incf pos))))))
 
 (defun make-hvector ()
   (make-array 16 :fill-pointer 0 :adjustable t))
 
-(defun process-header (vector)
+(defun process-header (vector)		;读取数据，创建一个header实体，并将数据填入header实体
   "Create a HEADER instance from the octet data in VECTOR."
   (let* ((name-starts (make-hvector))
          (name-ends (make-hvector))
@@ -1081,13 +1092,13 @@ the indexes in the header accordingly."
                                 :value-starts value-starts
                                 :value-ends value-ends))
          (mark nil)
-         (pos (next-line-pos vector)))
+         (pos (next-line-pos vector)))	;这个是header的起始位置
     (unless pos
       (error "Unable to process HTTP header"))
     (setf (status header) (status-code vector))
-    (labels ((save (value vector)
+    (labels ((save (value vector)	;又是强大的状态机
                (vector-push-extend value vector))
-             (mark ()
+             (mark ()			;记录值的结束的位置
                (setf mark pos))
              (clear-mark ()
                (setf mark nil))
@@ -1098,20 +1109,20 @@ the indexes in the header accordingly."
               (force-downcase-field-names header)
               (contract-field-value-indexes header)
               (return-from process-header header))
-             (in-new-line (code)
+             (in-new-line (code)	;一开始认为在新的一行
                (acase code
-                 ((#\Tab #\Space) (setf mark nil) #'in-value)
+                 ((#\Tab #\Space) (setf mark nil) #'in-value) ;没有名字的值,不太可能有这种情况吧？
                  (t
-                  (when mark
+                  (when mark		;如果设过mark那表示上一行的值的结尾的位置
                     (save mark value-ends))
-                  (clear-mark)
+                  (clear-mark)		;清除mark，当前位置为名字的开始位置，进入“在名字里”这个状态
                   (save pos name-starts)
                   (in-name code))))
-             (after-cr (code)
+             (after-cr (code)		
                (acase code
-                 (:lf #'in-new-line)
-                 (t (in-new-line code))))
-             (pending-value (code)
+                 (:lf #'in-new-line)	
+                 (t (in-new-line code)))) ;不太正常的情况
+             (pending-value (code)	  ;这个状态没有用当前, 为了跳过值与:之间的空白吗?
                (acase code
                  ((#\Tab #\Space) #'pending-value)
                  (:cr #'after-cr)
@@ -1119,29 +1130,29 @@ the indexes in the header accordingly."
                  (t (save pos value-starts) #'in-value)))
              (in-name (code)
                (acase code
-                 (#\:
+                 (#\:			;如果遇到：，表示名字部分结束，开始值的部分
                   (save pos name-ends)
                   (save (1+ pos) value-starts)
                   #'in-value)
-                 ((:cr :lf)
+                 ((:cr :lf)		;如果名字部分就遇到CRLF之一，表示该部分及以后都不是header了，就进入结束状态
                   (finish))
                  ((#\Tab #\Space)
                   (error "Unexpected whitespace in header field name"))
-                 (t
+                 (t			;以上都不是,那么表示还在名字中.
                   (unless (<= 0 code 127)
                     (error "Unexpected non-ASCII header field name"))
                   #'in-name)))
-             (in-value (code)
+             (in-value (code)		
                (acase code
-                 (:lf (mark) #'in-new-line)
-                 (:cr (mark) #'after-cr)
-                 (t #'in-value))))
+                 (:lf (mark) #'in-new-line) ;如果遇到LF,记下值的结束位置, 接下来就是下一行这个状态了
+                 (:cr (mark) #'after-cr)    ;如果遇到CR,那么进入下一个就是LF这个状态
+                 (t #'in-value))))	    ;其他值都表示还在值中
       (let ((state #'in-new-line))
         (loop
          (incf pos)
          (when (<= (length vector) pos)
            (error "No header found in response"))
-         (setf state (funcall state (aref vector pos))))))))
+         (setf state (funcall state (aref vector pos)))))))) ;状态迁移
 
 
 ;;; HTTP URL parsing
@@ -1160,7 +1171,7 @@ the indexes in the header accordingly."
     :accessor path
     :initform "/")))
 
-(defun parse-urlstring (urlstring)
+(defun parse-urlstring (urlstring)	;同样还是状态机的方式.
   (setf urlstring (string-trim " " urlstring))
   (let* ((pos (mismatch urlstring "http://" :test 'char-equal))
          (mark pos)
@@ -1223,19 +1234,19 @@ the indexes in the header accordingly."
          (setf state (funcall state (aref urlstring pos)))
          (incf pos))))))
 
-(defun url (thing)
+(defun url (thing)			;虽然有点不太严谨,但内部使用应该没问题
   (if (stringp thing)
       (parse-urlstring thing)
       thing))
 
-(defgeneric request-buffer (method url)
+(defgeneric request-buffer (method url)	;根据HTTP请求报文的方法,生成一个向URL的HTTP请求报文
   (:method (method url)
     (setf url (url url))
     (make-request-buffer (hostname url) (port url) (path url)
                          :method method)))
 
 (defun urlstring (url)
-  (format nil "~@[http://~A~]~@[:~D~]~A"
+  (format nil "~@[http://~A~]~@[:~D~]~A" ;~@[表示若参数为真,则不读取它,若参数为假,则不显示它它括起来的部分
           (hostname url)
           (and (/= 80 (port url)) (port url))
           (path url)))
@@ -1248,7 +1259,7 @@ the indexes in the header accordingly."
   (setf url1 (url url1))
   (setf url2 (url url2))
   (make-instance 'url
-                 :hostname (or (hostname url1)
+                 :hostname (or (hostname url1)		;merge-pathnames估计也是这样的处理方式
                                (hostname url2))
                  :port (or (port url1)
                            (port url2))
