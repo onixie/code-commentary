@@ -1078,6 +1078,7 @@ the indexes in the header accordingly."
 (defun make-hvector ()
   (make-array 16 :fill-pointer 0 :adjustable t))
 
+;每个头域由一个域名，冒号（:）和域值三部分组成。域名是大小写无关的，域值前可以添加任何数量的空格符，头域可以被扩展为多行，在每行开始处，使用至少一个空格或制表符。
 (defun process-header (vector)		;读取数据，创建一个header实体，并将数据填入header实体
   "Create a HEADER instance from the octet data in VECTOR."
   (let* ((name-starts (make-hvector))
@@ -1171,35 +1172,35 @@ the indexes in the header accordingly."
     :accessor path
     :initform "/")))
 
-(defun parse-urlstring (urlstring)	;同样还是状态机的方式.
-  (setf urlstring (string-trim " " urlstring))
+(defun parse-urlstring (urlstring)	;同样还是状态机的方式, 将字符串解析成url对像
+  (setf urlstring (string-trim " " urlstring)) ;首先,去掉开头结尾的空白
   (let* ((pos (mismatch urlstring "http://" :test 'char-equal))
          (mark pos)
          (url (make-instance 'url)))
-    (labels ((save ()
+    (labels ((save ()			;解析出来 的 内容 在 前一次设置的mark到当前位置
                (subseq urlstring mark pos))
-             (mark ()
+             (mark ()			;解析 的 开始位置
                (setf mark pos))
              (finish ()
                (return-from parse-urlstring url))
              (hostname-char-p (char)
                (position char "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
                          :test 'char-equal))
-             (at-start (char)
+             (at-start (char)		;一开始如果就是/,则没有host和port,直接就是path
                (case char
                  (#\/
                   (setf (port url) nil)
                   (mark)
                   #'in-path)
-                 (t
+                 (t			;否则一开始是host
                   #'in-host)))
              (in-host (char)
                (case char
-                 ((#\/ :end)
+                 ((#\/ :end)		;若遇到/或者:end字串不够的时候人为掉用的结尾,那么说明接下来是path, 先保存host
                   (setf (hostname url) (save))
-                  (mark)
+                  (mark)		;设置path的开始谓位置
                   #'in-path)
-                 (#\:
+                 (#\:			;若遇到:说明后面是port
                   (setf (hostname url) (save))
                   (mark)
                   #'in-port)
@@ -1207,7 +1208,7 @@ the indexes in the header accordingly."
                   (unless (hostname-char-p char)
                     (error "~S is not a valid URL" urlstring))
                   #'in-host)))
-             (in-port (char)
+             (in-port (char)		;若遇到/或者结尾,那么说明接下来是path, 先保存port
                (case char
                  ((#\/ :end)
                   (setf (port url)
@@ -1220,7 +1221,7 @@ the indexes in the header accordingly."
                   (unless (digit-char-p char)
                     (error "Bad port in URL ~S" urlstring))
                   #'in-port)))
-             (in-path (char)
+             (in-path (char)            ;若遇到#或者结尾,那么说明分析完成
                (case char
                  ((#\# :end)
                   (setf (path url) (save))
@@ -1229,7 +1230,7 @@ the indexes in the header accordingly."
       (let ((state #'at-start))
         (loop
          (when (<= (length urlstring) pos)
-           (funcall state :end)
+           (funcall state :end)		;当pos超过字串长度时,说明处理结束
            (finish))
          (setf state (funcall state (aref urlstring pos)))
          (incf pos))))))
@@ -1279,36 +1280,38 @@ the indexes in the header accordingly."
                                  cbuf)))
     (process-header header-data)))
 
+;在有时服务器生成HTTP回应是无法确定消息大小的，这时用Content-Length就无法事先写入长度，而需要实时生成消息长度，这时服务器一般采用Chunked编码。在进行Chunked编码传输时，在回复消息的头部有transfer-coding并定为Chunked，表示将用Chunked编码传输内容。
+;编码使用若干个Chunk组成，由一个标明长度为0的chunk结束，每个Chunk有两部分组成，第一部分是该Chunk的长度和长度单位（一般不写），第二部分就是指定长度的内容，每个部分用CRLF隔开。在最后一个长度为0的Chunk中的内容是称为footer的内容，是一些没有写的头部内容。 
 (defun read-chunk-header (cbuf)
-  (let* ((header-data (sink-until-matching (acode-matcher :cr :lf) cbuf))
+  (let* ((header-data (sink-until-matching (acode-matcher :cr :lf) cbuf)) ;读取到chunk头部+CRLF的部分
          (end (or (position (acode :cr) header-data)
                   (position (acode #\;) header-data))))
-    (values (parse-integer (ascii-subseq header-data 0 end) :radix 16))))
+    (values (parse-integer (ascii-subseq header-data 0 end) :radix 16)))) ;从0到end, 不包括chunk头部的CRLF
 
 (defun save-chunk-response (stream cbuf)
   "For a chunked response, read all chunks and write them to STREAM."
   (let ((fun (make-stream-writer stream))
         (matcher (acode-matcher :cr :lf)))
     (loop
-     (let ((chunk-size (read-chunk-header cbuf)))
-       (when (zerop chunk-size)
+     (let ((chunk-size (read-chunk-header cbuf))) ;读取一个chunk的头部
+       (when (zerop chunk-size)			  ;若头部为0,表示为chunk结束
          (return))
-       (call-for-n-octets chunk-size fun cbuf)
-       (skip-until-matching matcher cbuf)))))
+       (call-for-n-octets chunk-size fun cbuf) ;读取chunk内容
+       (skip-until-matching matcher cbuf)))))  ;跳过chunk的分界CRLF
 
-(defun save-response (file header cbuf)
+(defun save-response (file header cbuf)	;真对不同的编码传输方示,
   (with-open-file (stream file
                           :direction :output
                           :if-exists :supersede
                           :element-type 'octet)
     (let ((content-length (content-length header)))
-      (cond (content-length
+      (cond (content-length		;大小确定的时候
              (call-for-n-octets content-length
                                 (make-stream-writer stream)
                                 cbuf))
-            ((chunkedp header)
+            ((chunkedp header)		;chunked的时候
              (save-chunk-response stream cbuf))
-            (t
+            (t				;否则,读到最后
              (call-until-end (make-stream-writer stream) cbuf))))))
 
 (defun call-with-progress-bar (size fun)
