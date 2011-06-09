@@ -318,7 +318,7 @@
 (defun sink-buffer (sink)
   (subseq (storage sink) 0))
 
-(defvar *proxy-url* (config-value "proxy-url"))
+(defvar *proxy-url* (config-value "proxy-url"));通过ql-config从配置文件中读取proxy的url
 
 (defun full-proxy-path (host port path)
   (format nil "~:[http~;https~]://~A~:[:~D~;~*~]~A"
@@ -329,28 +329,28 @@
                        port
                        path))
 
-(defun user-agent-string ()
+(defun user-agent-string ()		;返回HTTP请求报文中，User Agent域的内容
   "Return a string suitable for using as the User-Agent value in HTTP
 requests. Includes Quicklisp version and CL implementation and version
 information."
   (labels ((requires-encoding (char)
              (not (or (alphanumericp char)
-                      (member char '(#\. #\- #\_)))))
+                      (member char '(#\. #\- #\_))))) ;如果不是字符数字以及._-，则将其替换为-
            (encode (string)
              (substitute-if #\_ #'requires-encoding string))
            (version-string (string)
              (if (string-equal string nil)
                  "unknown"
                  (let* ((length (length string))
-                        (start (or (position-if #'digit-char-p string)
+                        (start (or (position-if #'digit-char-p string) ;找到版本中第一个数字出现的地方
                                    0))
-                        (space (or (position #\Space string :start start)
+                        (space (or (position #\Space string :start start) ;找到数字出现后的第一个空格，认为这之间的就是版本
                                    length))
-                        (limit (min space length (+ start 24))))
+                        (limit (min space length (+ start 24)))) ;版本最多不超过24个字符
                    (encode (subseq string start limit))))))
     ;; FIXME: Be more configurable, and take/set the version from
     ;; somewhere else.
-    (format nil "quicklisp-client/2011051901 ~A/~A"
+    (format nil "quicklisp-client/2011051901 ~A/~A" ;User Agent的具体格式
             (encode (lisp-implementation-type))
             (version-string (lisp-implementation-version)))))
 
@@ -726,13 +726,13 @@ the indexes in the header accordingly."
        (call-for-n-octets chunk-size fun cbuf)
        (skip-until-matching matcher cbuf)))))
 
-(defun save-response (file header cbuf &key (if-exists :rename-and-delete))
+(defun save-response (file header cbuf &key (if-exists :rename-and-delete)) ;增加对以后文件处理的选项
   (with-open-file (stream file
                           :direction :output
-                          :if-exists if-exists
+                          :if-exists if-exists ;对于没有版本的支持，以及不去分delete与expunge的系统，rename-and-delete等价于supersede, 可能这里选择rename-and-delete更加严谨
                           :element-type 'octet)
     (let ((content-length (content-length header)))
-      (cond ((chunkedp header)
+      (cond ((chunkedp header)		;先判断是否为chunked，可能content-length在为chunked的情况下也会被发送的情况，这样更严谨吧。
              (save-chunk-response stream cbuf))
             (content-length
              (call-for-n-octets content-length
@@ -751,7 +751,7 @@ the indexes in the header accordingly."
         (funcall fun)))
     (finish-display progress-bar)))
 
-(define-condition fetch-error (error) ())
+(define-condition fetch-error (error) ()) ;在fetch过程中，都使用error这个condition来处理，比之前直接error一个字符串要更好些。
 
 (define-condition unexpected-http-status (fetch-error)
   ((status-code
@@ -760,7 +760,7 @@ the indexes in the header accordingly."
    (url
     :initarg :url
     :reader unexpected-http-status-url))
-  (:report
+  (:report				;注意自定义condition的时候，report选项接受的函数参数！
    (lambda (condition stream)
      (format stream "Unexpected HTTP status for ~A: ~A"
              (unexpected-http-status-url condition)
