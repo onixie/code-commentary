@@ -89,7 +89,7 @@
   (update-display progress-bar)
   (setf (end-time progress-bar) (get-internal-real-time))
   (terpri)
-  (format t "~:D bytes in ~$ seconds (~$KB/sec)~%"
+  (format t "~:D bytes in ~$ seconds (~$KB/sec)~%" ;这里最后增加一个~%,换行
           (total progress-bar)
           (elapsed-time progress-bar)
           (/  (units-per-second progress-bar) 1024))

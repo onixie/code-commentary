@@ -87,13 +87,13 @@
                 (tar-path (full-path block))
                 (full-path (merge-pathnames tar-path directory))
                 (payload-size (payload-size block))
-                (block-count (ceiling (payload-size block) 512)))
+                (block-count (ceiling (payload-size block) 512))) ;在let*赋值,更直关,重用,调试
          (case payload-type
            (:file
             (save-file full-path payload-size stream))
            (:directory
             (ensure-directories-exist full-path))
-           ((:symlink :long-name :global-header)
+           ((:symlink :long-name :global-header) ;对于这些特殊的处理,从t的 默认处理中分出来,更明了,但我还是觉的之前的代码更简洁
             ;; These block types aren't required for Quicklisp archives
             (skip-n-blocks block-count stream))
            (t

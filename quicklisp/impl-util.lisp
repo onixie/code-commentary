@@ -1,11 +1,11 @@
-;;;; impl-util.lisp
+=;;;; impl-util.lisp
 
 (in-package #:ql-impl-util)
 
 (definterface call-with-quiet-compilation (fun)
   (:documentation
    "Call FUN with warnings, style-warnings, and other verbose messages
-   suppressed.")
+   suppressed.")			;宏新增的文档说明支持
   (:implementation t
     (let ((*load-verbose* nil)
           (*compile-verbose* nil)
@@ -16,9 +16,9 @@
 
 (defimplementation (call-with-quiet-compilation :for sbcl :qualifier :around)
     (fun)
-  (declare (ignore fun))
+  (declare (ignore fun))		;因为该方法中不会使用fun,所以应该为ignore,而不是ignorable, 
   (handler-bind ((ql-sbcl:compiler-note #'muffle-warning))
-    (call-next-method)))
+    (call-next-method)))		;传到基类的方法中处理
 
 (defimplementation (call-with-quiet-compilation :for cmucl :qualifier :around)
     (fun)

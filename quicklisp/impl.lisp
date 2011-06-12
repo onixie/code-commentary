@@ -9,12 +9,12 @@
   "A table of defined interfaces and their documentation.")
 
 (defun show-interfaces ()
-  "Display information about what interfaces are defined."
+  "Display information about what interfaces are defined.";以interface为key, (lambda-list . docstring)为 info
   (maphash (lambda (interface info)
              (destructuring-bind (arguments docstring)
                  info
                (let ((*package* (find-package :keyword)))
-                 (format t "(~S ~:[()~;~:*~A~]~@[~% ~S~])~%"
+                 (format t "(~S ~:[()~;~:*~A~]~@[~% ~S~])~%";~[为条件显示,~:*为 退回之前处理的参数
                          interface arguments docstring))))
            *interfaces*))
 
@@ -61,10 +61,10 @@
         ((:reexport-from)
          (push (cons :export (cddr option)) output-options)
          (push (cons :import-from (cdr option)) import-options))))
-    `(progn
+    `(progn				;这里改为progn,是因为defclass这些东西不需要在编译期使用
        ,@(when effectivep
                `((eval-when (:compile-toplevel :load-toplevel :execute)
-                   ,@prep)))
+                   ,@prep)))		;预先加载的内容,会在编译期使用
        (defclass ,class ,superclasses ())
        (defpackage ,package-name ,@output-options
                    ,@(when effectivep
@@ -75,28 +75,28 @@
                  `((neuter-package ,package-name))))))
 
 (defmacro definterface (name lambda-list &body options)
-  (let* ((doc-option (find :documentation options :key #'first))
+  (let* ((doc-option (find :documentation options :key #'first)) ;寻找:documentation关键字的参数
          (doc (second doc-option)))
-    (setf (gethash name *interfaces*) (list lambda-list doc)))
+    (setf (gethash name *interfaces*) (list lambda-list doc))) ;加入*interfaces*中
   (let* ((forbidden (intersection lambda-list lambda-list-keywords))
          (gf-options (remove :implementation options :key #'first))
          (implementations (set-difference options gf-options))
-         (implementation-arg (copy-symbol '%implementation)))
+         (implementation-arg (copy-symbol '%implementation))) ;这里改用一个符号,而不是*implementation*用于宏展开时的defgenericy与defmethod的参数, 这样的使用更正确
     (when forbidden
       (error "~S not allowed in definterface lambda list" forbidden))
     (flet ((method-option (class body)
-             `(:method ((,implementation-arg ,class) ,@lambda-list)
+             `(:method ((,implementation-arg ,class) ,@lambda-list) ;defmethod中参数为#:%implementation
                 ,@body)))
       (let ((generic-name (intern (format nil "%~A" name))))
-        `(progn
+        `(progn				;这里也从eval-when改为progn,因为defgeneric不需要在编译期使用
            (defgeneric ,generic-name (lisp ,@lambda-list)
              ,@gf-options
-             ,@(mapcan (lambda (implementation)
+             ,@(mapcan (lambda (implementation) ;处理有多个类对应同一实现的情况
                          (destructuring-bind (class &rest body)
                              (rest implementation)
-                           (mapcar (lambda (class)
+                           (mapcar (lambda (class) ;对每个类都生成method体部分
                                      (method-option class body))
-                                   (if (consp class)
+                                   (if (consp class) ;对于单个类,把它变成列表
                                        class
                                        (list class)))))
                        implementations))
@@ -117,7 +117,7 @@
         (error "~S does not name an implementation function" name))
       `(defmethod ,generic-name
            ,@(when qualifier (list qualifier))
-         ,(list* `(,implementation-arg ,for) lambda-list) ,@body))))
+         ,(list* `(,implementation-arg ,for) lambda-list) ,@body)))) ;defmethod的参数为#:%implementation
 
 
 ;;; Bootstrap implementations
