@@ -58,7 +58,7 @@
           :intern
           :documentation)
          (push option output-options))
-        ((:reexport-from)
+        ((:reexport-from)		;导出特定cl特定包的函数(一般包含不在cl-user中的函数)
          (push (cons :export (cddr option)) output-options)
          (push (cons :import-from (cdr option)) import-options))))
     `(progn				;这里改为progn,是因为defclass这些东西不需要在编译期使用
@@ -167,7 +167,7 @@
 (define-implementation-package :clisp #:ql-clisp
   (:documentation "GNU CLISP - http://clisp.cons.org/")
   (:class clisp)
-  (:reexport-from #:socket
+  (:reexport-from #:socket		;
                   #:socket-connect)
   (:reexport-from #:ext
                   #:delete-dir

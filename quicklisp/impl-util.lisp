@@ -75,13 +75,13 @@
 
 (defun init-file-name-for (&optional implementation-designator)
   (let* ((class-name (find-symbol (string-upcase implementation-designator)
-                                  'ql-impl))
-         (class (find-class class-name nil)))
+                                  'ql-impl));寻找包含在该包中 类名 的 符号
+         (class (find-class class-name nil))) ;寻找 对应的 类
     (when class
-      (let ((*implementation* (make-instance class)))
+      (let ((*implementation* (make-instance class))) ;创件类实例 
         (init-file-name)))))
 
-(defun quicklisp-init-file-form ()
+(defun quicklisp-init-file-form ()	;setup.lisp是quicklisp起动的初始化文件
   "Return a form suitable for describing the location of the quicklisp
   init file. If the file is available relative to the home directory,
   returns a form that merges with the home directory instead of
@@ -94,7 +94,7 @@
           (t
            `(merge-pathnames ,enough (user-homedir-pathname))))))
 
-(defun write-init-forms (stream &key (indentation 0))
+(defun write-init-forms (stream &key (indentation 0)) ;说明下列内容是被add-to-init-file函数添加到cl的起动文件中去以起动ql.
   (format stream "~%~v@T;;; The following lines added by ql:add-to-init-file:~%"
           indentation)
   (format stream "~v@T#-quicklisp~%" indentation)
@@ -112,21 +112,21 @@ a string or pathname, return its merged pathname instead."
     ((or string pathname)
      (merge-pathnames implementation))
     ((or null (eql t))
-     (init-file-name))
+     (init-file-name))			;这样调用应该反回null吧? 为了下面t的case才这样写吧.
     (t
      (init-file-name-for implementation))))
 
-(defun add-to-init-file (&optional implementation-or-file)
+(defun add-to-init-file (&optional implementation-or-file) ;为什么不给它来个默认值, 这个有个默认值不是很好吗?
   "Add forms to the Lisp implementation's init file that will load
 quicklisp at CL startup."
-  (let ((init-file (suitable-lisp-init-file implementation-or-file)))
+  (let ((init-file (suitable-lisp-init-file implementation-or-file))) ;找到对应的 cl初始化文件
     (unless init-file
       (error "Don't know how to add to init file for your implementation."))
-    (setf init-file (merge-pathnames init-file (user-homedir-pathname)))
+    (setf init-file (merge-pathnames init-file (user-homedir-pathname))) ;对应当前用户的那个初始化文件的 全路径
     (format *query-io* "~&I will append the following lines to ~S:~%"
             init-file)
     (write-init-forms *query-io* :indentation 2)
-    (when (ql-util:press-enter-to-continue)
+    (when (ql-util:press-enter-to-continue) ;也对*query-io*处理
       (with-open-file (stream init-file
                               :direction :output
                               :if-does-not-exist :create
@@ -140,7 +140,7 @@ quicklisp at CL startup."
 ;;; Native namestrings.
 ;;;
 
-(definterface native-namestring (pathname)
+(definterface native-namestring (pathname) ;native namestring比namestring可移植
   (:documentation "In Clozure CL, #\\.s in pathname-names are escaped
   in namestrings with #\\> on Windows and #\\\\ elsewhere. This can
   cause a problem when using CL:NAMESTRING to store pathname data that
@@ -174,13 +174,13 @@ quicklisp at CL startup."
     (directory directory))
   (:implementation abcl
     (directory (merge-pathnames *wild-entry* directory)
-               #+abcl :resolve-symlinks #+abcl nil))
+               #+abcl :resolve-symlinks #+abcl nil)) ;用两个特征判断
   (:implementation ccl
     (directory (merge-pathnames *wild-entry* directory)
                #+ccl :directories #+ccl t))
   (:implementation clisp
     (mapcar 'first
-            (nconc (directory (merge-pathnames *wild-entry* directory)
+            (nconc (directory (merge-pathnames *wild-entry* directory) ;天呐!CLisp的pathname处理总是非长特别
                               #+clisp :full #+clisp t)
                    (directory (merge-pathnames *wild-relative* directory)
                               #+clisp :full #+clisp t))))
@@ -205,7 +205,7 @@ quicklisp at CL startup."
     (not (or (pathname-name entry)
              (pathname-type entry)
              (pathname-version entry))))
-  (:implementation allegro
+  (:implementation allegro		;商业实现就是功能多,和和!
     (ql-allegro:file-directory-p entry))
   (:implementation lispworks
     (ql-lispworks:file-directory-p entry)))
@@ -235,19 +235,19 @@ quicklisp at CL startup."
   (:implementation t
     (let ((directories-to-process (list (truename pathname)))
           (directories-to-delete '()))
-      (loop
+      (loop				;遍历根,然后把找到的目录都push到待删除表中,文件全删除
         (unless directories-to-process
           (return))
-        (let* ((current (pop directories-to-process))
+        (let* ((current (pop directories-to-process)) ;这个分明是大学数据结构中对树的遍历操作,记不起名字了(非递归,广度优先).
                (entries (directory-entries current)))
           (push current directories-to-delete)
           (dolist (entry entries)
             (if (directoryp entry)
                 (push entry directories-to-process)
                 (delete-file entry)))))
-      (map nil 'delete-directory directories-to-delete)))
-  (:implementation allegro
+      (map nil 'delete-directory directories-to-delete))) ;因为前面用的push,因此,这理会从叶子结点的目录开始删除
+  (:implementation allegro		;仍然商业实现很多功能!
     (ql-allegro:delete-directory-and-files pathname))
-  (:implementation ccl
+  (:implementation ccl			;ccl走在了前头啊!和和
     (ql-ccl:delete-directory pathname)))
 
