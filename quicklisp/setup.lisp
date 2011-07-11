@@ -183,28 +183,28 @@
 (defvar *initial-dist-url*		;发布的位置,我很想建镜像!
   "http://beta.quicklisp.org/dist/quicklisp.txt")
 
-(defun maybe-initial-setup ()
+(defun maybe-initial-setup ()		;如果该setup是quicklisp-quickstart调用的，那么就是第一次安装quicklisp
   ;; Is this running under the quicklisp bootstrap?
   (let ((bootstrap-package (find-package 'quicklisp-quickstart)))
     (when bootstrap-package
-      (let* ((proxy (find-symbol (string '#:*proxy-url*) bootstrap-package))
+      (let* ((proxy (find-symbol (string '#:*proxy-url*) bootstrap-package)) ;将quicklisp-quickstart设定的代理重新设定到quicklisp上
              (proxy-value (and proxy (symbol-value proxy))))
         (when (and proxy-value (not *proxy-url*))
           (setf *proxy-url* proxy-value)
           (setf (config-value "proxy-url") proxy-value)))))
-  (unless (ignore-errors (truename (qmerge "dists/")))
+  (unless (ignore-errors (truename (qmerge "dists/"))) ;如果dist文件不存在，就下载一个dist文件，并启用它
     (let ((target (qmerge "dists/quicklisp/distinfo.txt")))
       (ensure-directories-exist target)
       (fetch *initial-dist-url* target)
-      (enable (find-dist "quicklisp")))))
+      (enable (find-dist "quicklisp"))))) ;创建一个quicklisp的dist对象
 
 (defun setup ()
   (unless (member 'system-definition-searcher
                   asdf:*system-definition-search-functions*)
     (setf asdf:*system-definition-search-functions*
           (append asdf:*system-definition-search-functions*
-                  (list 'system-definition-searcher))))
-  (let ((files (nconc (directory (qmerge "local-setup/*.lisp"))
+                  (list 'system-definition-searcher)))) ;将quicklisp自定义的.asd文件搜索函数注册到asdf中
+  (let ((files (nconc (directory (qmerge "local-setup/*.lisp")) ;一些配置文件的加载，一般情况下应该没什么用
                       (directory (qmerge "local-setup/*.cl")))))
     (with-simple-restart (abort "Stop loading local setup files")
       (dolist (file (sort files #'string< :key #'pathname-name))
@@ -213,6 +213,6 @@
           (unless (char= (char (pathname-name file) 0)
                          #\.)
             (load file))))))
-  (maybe-initial-setup)
-  (pushnew :quicklisp *features*)
+  (maybe-initial-setup)			;下载dist文件，初始化必要的目录，创建一个dist对象
+  (pushnew :quicklisp *features*)	;表明quicklisp已经启用
   t)
